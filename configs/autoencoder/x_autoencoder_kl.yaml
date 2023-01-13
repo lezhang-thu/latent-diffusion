@@ -5,7 +5,7 @@ model:
     monitor: "val/rec_loss"
     embed_dim: 3
     lossconfig:
-      target: ldm.modules.losses.LPIPSWithDiscriminator
+      target: ldm.modules.losses.x_contperceptual.LPIPSWithDiscriminator
       params:
         disc_start: 50001
         kl_weight: 0.000001
@@ -28,7 +28,7 @@ data:
   target: x_main.DataModuleFromConfig
   params:
     batch_size: 12
-    f_name: "sc_training.h5ad"
+    f_name: "../sc_training.h5ad"
     frac: 0.2
 
 lightning:
