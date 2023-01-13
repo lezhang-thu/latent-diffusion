@@ -136,8 +136,19 @@ class DataModuleFromConfig(pl.LightningDataModule):
 
     def setup(self, stage=None):
         import scanpy as sc
-        adata = sc.read_h5ad(f_name)
+        adata = sc.read_h5ad(self.f_name)
         gene_expression = adata.X.todense()
+        # debug - start
+        print('*' * 20)
+        print(gene_expression.shape)
+        x = gene_expression[0, :]
+        print((x != 0).sum())
+        print(x.mean())
+        print((gene_expression != 0).sum(-1).mean())
+        print(gene_expression.mean(-1).mean())
+        exit(0)
+
+        # debug - end
         gene_expression = np.pad(gene_expression,
                                  ((0, 0),
                                   (0, 128 * 128 - gene_expression.shape[1])))
@@ -161,7 +172,7 @@ class DataModuleFromConfig(pl.LightningDataModule):
 
     def val_dataloader(self, shuffle=False):
         return DataLoader(
-            self.datasets["validation"],
+            self.datasets["val"],
             batch_size=self.batch_size,
         )
 
@@ -184,7 +195,7 @@ class SetupCallback(Callback):
             ckpt_path = os.path.join(self.ckptdir, "last.ckpt")
             trainer.save_checkpoint(ckpt_path)
 
-    def on_pretrain_routine_start(self, trainer, pl_module):
+    def on_fit_start(self, trainer, pl_module):
         if trainer.global_rank == 0:
             # Create logdirs and save configs
             os.makedirs(self.logdir, exist_ok=True)
@@ -220,29 +231,6 @@ class SetupCallback(Callback):
                     os.rename(self.logdir, dst)
                 except FileNotFoundError:
                     pass
-
-
-class CUDACallback(Callback):
-    # see https://github.com/SeanNaren/minGPT/blob/master/mingpt/callback.py
-    def on_train_epoch_start(self, trainer, pl_module):
-        # Reset the memory use counter
-        torch.cuda.reset_peak_memory_stats(trainer.root_gpu)
-        torch.cuda.synchronize(trainer.root_gpu)
-        self.start_time = time.time()
-
-    def on_train_epoch_end(self, trainer, pl_module, outputs):
-        torch.cuda.synchronize(trainer.root_gpu)
-        max_memory = torch.cuda.max_memory_allocated(trainer.root_gpu) / 2**20
-        epoch_time = time.time() - self.start_time
-
-        try:
-            max_memory = trainer.training_type_plugin.reduce(max_memory)
-            epoch_time = trainer.training_type_plugin.reduce(epoch_time)
-
-            rank_zero_info(f"Average Epoch time: {epoch_time:.2f} seconds")
-            rank_zero_info(f"Average Peak memory {max_memory:.2f}MiB")
-        except AttributeError:
-            pass
 
 
 if __name__ == "__main__":
@@ -343,8 +331,7 @@ if __name__ == "__main__":
         lightning_config = config.pop("lightning", OmegaConf.create())
         # merge trainer cli with config
         trainer_config = lightning_config.get("trainer", OmegaConf.create())
-        # default to ddp
-        trainer_config["accelerator"] = "ddp"
+        trainer_config["accelerator"] = "gpu"
         for k in nondefault_trainer_args(opt):
             trainer_config[k] = getattr(opt, k)
         if not "gpus" in trainer_config:
@@ -429,10 +416,7 @@ if __name__ == "__main__":
                     "logging_interval": "step",
                     # "log_momentum": True
                 }
-            },
-            "cuda_callback": {
-                "target": "x_main.CUDACallback"
-            },
+            }
         }
         if version.parse(pl.__version__) >= version.parse('1.4.0'):
             default_callbacks_cfg.update(
@@ -481,11 +465,6 @@ if __name__ == "__main__":
 
         # data
         data = instantiate_from_config(config.data)
-        print("#### Data #####")
-        for k in data.datasets:
-            print(
-                f"{k}, {data.datasets[k].__class__.__name__}, {len(data.datasets[k])}"
-            )
 
         # configure learning rate
         bs, base_lr = config.data.params.batch_size, config.model.base_learning_rate

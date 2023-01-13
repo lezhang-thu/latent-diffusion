@@ -16,12 +16,10 @@ class AutoencoderKL(pl.LightningModule):
         embed_dim,
         ckpt_path=None,
         ignore_keys=[],
-        image_key="image",
         colorize_nlabels=None,
         monitor=None,
     ):
         super().__init__()
-        self.image_key = image_key
         self.encoder = Encoder(**ddconfig)
         self.decoder = Decoder(**ddconfig)
         self.loss = instantiate_from_config(lossconfig)
@@ -71,8 +69,8 @@ class AutoencoderKL(pl.LightningModule):
         dec = self.decode(z)
         return dec, posterior
 
-    def get_input(self, batch, k):
-        x = batch[k]
+    def get_input(self, batch):
+        x = batch
         if len(x.shape) == 3:
             x = x[..., None]
         x = x.permute(0, 3, 1,
@@ -80,7 +78,7 @@ class AutoencoderKL(pl.LightningModule):
         return x
 
     def training_step(self, batch, batch_idx, optimizer_idx):
-        inputs = self.get_input(batch, self.image_key)
+        inputs = self.get_input(batch)
         reconstructions, posterior = self(inputs)
 
         if optimizer_idx == 0:
@@ -130,7 +128,7 @@ class AutoencoderKL(pl.LightningModule):
             return discloss
 
     def validation_step(self, batch, batch_idx):
-        inputs = self.get_input(batch, self.image_key)
+        inputs = self.get_input(batch)
         reconstructions, posterior = self(inputs)
         aeloss, log_dict_ae = self.loss(inputs,
                                         reconstructions,

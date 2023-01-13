@@ -2,6 +2,13 @@ import functools
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+
+
+def adopt_weight(weight, global_step, threshold=0, value=0.):
+    if global_step < threshold:
+        weight = value
+    return weight
 
 
 def hinge_d_loss(logits_real, logits_fake):
