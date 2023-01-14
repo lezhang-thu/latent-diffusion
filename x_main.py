@@ -138,17 +138,18 @@ class DataModuleFromConfig(pl.LightningDataModule):
         import scanpy as sc
         adata = sc.read_h5ad(self.f_name)
         gene_expression = adata.X.todense()
-        # debug - start
-        print('*' * 20)
-        print(gene_expression.shape)
-        x = gene_expression[0, :]
-        print((x != 0).sum())
-        print(x.mean())
-        print((gene_expression != 0).sum(-1).mean())
-        print(gene_expression.mean(-1).mean())
-        exit(0)
+        if False:
+            # debug - start
+            print('*' * 20)
+            print(gene_expression.shape)
+            x = gene_expression[0, :]
+            print((x != 0).sum())
+            print(x.mean())
+            print((gene_expression != 0).sum(-1).mean())
+            print(gene_expression.mean(-1).mean())
+            #exit(0)
 
-        # debug - end
+            # debug - end
         gene_expression = np.pad(gene_expression,
                                  ((0, 0),
                                   (0, 128 * 128 - gene_expression.shape[1])))
@@ -160,6 +161,8 @@ class DataModuleFromConfig(pl.LightningDataModule):
         x = len(gene_expression) - y
         self.datasets["train"], self.datasets[
             "val"] = torch.utils.data.random_split(gene_expression, [x, y])
+        self.datasets["predict"] = torch.utils.data.default_convert(
+            gene_expression)
 
         for k in self.datasets:
             self.datasets[k] = WrappedDataset(self.datasets[k])
@@ -170,11 +173,17 @@ class DataModuleFromConfig(pl.LightningDataModule):
                           shuffle=True,
                           drop_last=True)
 
-    def val_dataloader(self, shuffle=False):
+    def val_dataloader(self):
         return DataLoader(
             self.datasets["val"],
             batch_size=self.batch_size,
         )
+
+    def predict_dataloader(self):
+        return DataLoader(self.datasets["predict"],
+                          batch_size=self.batch_size,
+                          shuffle=False,
+                          drop_last=False)
 
 
 class SetupCallback(Callback):
@@ -514,6 +523,16 @@ if __name__ == "__main__":
             except Exception:
                 melk()
                 raise
+        else:
+            print("Generating latent vectors")
+            x_resume = "logs/2023-01-13T23-54-25_x_autoencoder_kl/checkpoints/epoch=000016.ckpt"
+            print(x_resume)
+            x = trainer.predict(model, data, ckpt_path=x_resume)
+            x = torch.cat(x).detach().cpu().numpy()
+            print(x.shape)
+            with open("../latent_vectors.npy", "wb") as f:
+                np.save(f, x)
+
     except Exception:
         if opt.debug and trainer.global_rank == 0:
             try:

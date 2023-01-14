@@ -1,3 +1,5 @@
+import time
+
 import torch
 import pytorch_lightning as pl
 import torch.nn.functional as F
@@ -60,6 +62,12 @@ class AutoencoderKL(pl.LightningModule):
         dec = self.decoder(z)
         return dec
 
+    def predict_step(self, batch, batch_idx, dataloader_idx=0):
+        inputs = self.get_input(batch)
+        posterior = self.encode(inputs)
+        z = posterior.mode()
+        return z.permute(0, 2, 3, 1).reshape(len(batch), -1)
+
     def forward(self, input, sample_posterior=True):
         posterior = self.encode(input)
         if sample_posterior:
@@ -78,6 +86,9 @@ class AutoencoderKL(pl.LightningModule):
         return x
 
     def training_step(self, batch, batch_idx, optimizer_idx):
+        # cool down GPU
+        time.sleep(0.5)
+
         inputs = self.get_input(batch)
         reconstructions, posterior = self(inputs)
 
